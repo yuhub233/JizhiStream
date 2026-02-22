@@ -20,9 +20,6 @@ compose.desktop {
             targetFormats(TargetFormat.Msi, TargetFormat.Exe)
             packageName = "JizhiStream"
             packageVersion = "1.0.0"
-            windows {
-                iconFile.set(project.file("src/main/resources/icon.ico"))
-            }
         }
     }
 }
