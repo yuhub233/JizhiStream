@@ -13,21 +13,29 @@ data class AppSettings(
 
     companion object {
         private val gson = Gson()
+        private var customDir: File? = null
+
+        fun init(dir: File) {
+            customDir = dir
+        }
+
         private fun getConfigFile(): File {
-            val dir = File(System.getProperty("user.home"), ".jizhistream")
+            val dir = customDir ?: File(System.getProperty("user.home"), ".jizhistream")
             dir.mkdirs()
             return File(dir, "settings.json")
         }
 
         fun load(): AppSettings {
-            val file = getConfigFile()
-            return if (file.exists()) {
-                try { gson.fromJson(file.readText(), AppSettings::class.java) } catch (_: Exception) { AppSettings() }
-            } else AppSettings()
+            return try {
+                val file = getConfigFile()
+                if (file.exists()) {
+                    gson.fromJson(file.readText(), AppSettings::class.java) ?: AppSettings()
+                } else AppSettings()
+            } catch (_: Exception) { AppSettings() }
         }
 
         fun save(settings: AppSettings) {
-            getConfigFile().writeText(gson.toJson(settings))
+            try { getConfigFile().writeText(gson.toJson(settings)) } catch (_: Exception) {}
         }
     }
 }

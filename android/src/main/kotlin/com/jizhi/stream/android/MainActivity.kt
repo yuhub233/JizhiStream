@@ -32,6 +32,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        AppSettings.init(filesDir)
         setContent {
             AndroidApp(
                 onStartCapture = { width, height, fps, target ->
