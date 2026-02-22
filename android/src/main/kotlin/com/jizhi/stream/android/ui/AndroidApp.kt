@@ -29,7 +29,7 @@ import kotlinx.coroutines.*
 
 @Composable
 fun AndroidApp(
-    onStartCapture: (Int, Int, Int, String) -> Unit,
+    onRequestProjection: (Int, Int, Int, () -> Unit) -> Unit,
     onStopCapture: () -> Unit
 ) {
     var settings by remember { mutableStateOf(AppSettings.load()) }
@@ -44,6 +44,7 @@ fun AndroidApp(
     var streaming by remember { mutableStateOf(false) }
     var statusText by remember { mutableStateOf("就绪") }
     var serverRunning by remember { mutableStateOf(false) }
+    var projectionReady by remember { mutableStateOf(false) }
 
     var controlServer: ControlServer? by remember { mutableStateOf(null) }
     var sender: StreamSender? by remember { mutableStateOf(null) }
@@ -66,24 +67,33 @@ fun AndroidApp(
 
     fun startServer() {
         if (serverRunning) return
-        controlServer = ControlServer(authManager) { config, socket ->
-            statusText = "收到串流请求: ${config.width}x${config.height}"
-            sender = StreamSender(socket.inetAddress.hostAddress).apply { start() }
-            ScreenCaptureService.onFrameCallback = { frame -> sender?.sendFrame(frame) }
-            onStartCapture(config.width, config.height, config.fps, socket.inetAddress.hostAddress)
-            streaming = true
+        statusText = "正在请求屏幕录制权限..."
+        val cfg = settings.streamConfig
+        onRequestProjection(cfg.width, cfg.height, cfg.fps) {
+            projectionReady = true
+            controlServer = ControlServer(authManager) { config, socket ->
+                val targetIp = socket.inetAddress.hostAddress ?: return@ControlServer
+                statusText = "收到串流请求: ${config.width}x${config.height}"
+                sender = StreamSender(targetIp).apply { start() }
+                ScreenCaptureService.onFrameCallback = { frame -> sender?.sendFrame(frame) }
+                streaming = true
+            }
+            controlServer?.start(scope)
+            serverRunning = true
+            statusText = "服务已启动，等待连接..."
         }
-        controlServer?.start(scope)
-        serverRunning = true
-        statusText = "服务已启动，等待连接..."
     }
 
     fun stopServer() {
         onStopCapture()
         sender?.stop()
+        sender = null
         controlServer?.stop()
+        controlServer = null
         serverRunning = false
         streaming = false
+        projectionReady = false
+        ScreenCaptureService.onFrameCallback = null
         statusText = "服务已停止"
     }
 
@@ -105,6 +115,11 @@ fun AndroidApp(
         }
     }
 
+    val allDevices = remember(devices, settings.manualDevices) {
+        val manual = settings.manualDevices.map { DeviceInfo(it.name, it.ip, "手动") }
+        (devices + manual).distinctBy { it.ip }
+    }
+
     val darkColors = darkColorScheme(
         primary = Color(0xFF6C63FF),
         surface = Color(0xFF1E1E2E),
@@ -119,7 +134,7 @@ fun AndroidApp(
                 AndroidTopBar(currentPage) { currentPage = it }
                 when (currentPage) {
                     "home" -> AndroidHomePage(
-                        devices = devices,
+                        devices = allDevices,
                         serverRunning = serverRunning,
                         streaming = streaming,
                         statusText = statusText,
@@ -216,8 +231,11 @@ private fun AndroidHomePage(
                             verticalAlignment = Alignment.CenterVertically) {
                             Box(modifier = Modifier.size(36.dp).clip(RoundedCornerShape(8.dp))
                                 .background(Color(0xFF313244)), contentAlignment = Alignment.Center) {
-                                Text(if (device.platform.contains("Android", true)) "A" else "W",
-                                    fontWeight = FontWeight.Bold, color = Color(0xFF6C63FF))
+                                Text(when {
+                                    device.platform.contains("Android", true) -> "A"
+                                    device.platform == "手动" -> "M"
+                                    else -> "W"
+                                }, fontWeight = FontWeight.Bold, color = Color(0xFF6C63FF))
                             }
                             Spacer(Modifier.width(10.dp))
                             Column(modifier = Modifier.weight(1f)) {
@@ -244,6 +262,8 @@ private fun AndroidSettingsPage(settings: AppSettings, onSave: (AppSettings) -> 
     var height by remember { mutableStateOf(settings.streamConfig.height.toString()) }
     var fps by remember { mutableStateOf(settings.streamConfig.fps.toString()) }
     var bitrate by remember { mutableStateOf(settings.streamConfig.maxBitrateMbps.toString()) }
+    var manualIp by remember { mutableStateOf("") }
+    var manualName by remember { mutableStateOf("") }
 
     Column(modifier = Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -282,6 +302,43 @@ private fun AndroidSettingsPage(settings: AppSettings, onSave: (AppSettings) -> 
                     OutlinedTextField(value = bitrate, onValueChange = { bitrate = it },
                         label = { Text("码率(Mbps)") }, modifier = Modifier.weight(1f), singleLine = true,
                         colors = tfColors(), shape = RoundedCornerShape(8.dp))
+                }
+            }
+        }
+
+        Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E2E)), shape = RoundedCornerShape(16.dp)) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text("手动添加设备", fontWeight = FontWeight.Bold, color = Color(0xFFCDD6F4))
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(value = manualName, onValueChange = { manualName = it },
+                    label = { Text("设备名") }, modifier = Modifier.fillMaxWidth(), singleLine = true,
+                    colors = tfColors(), shape = RoundedCornerShape(8.dp))
+                Spacer(Modifier.height(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedTextField(value = manualIp, onValueChange = { manualIp = it },
+                        label = { Text("IP地址") }, modifier = Modifier.weight(1f), singleLine = true,
+                        colors = tfColors(), shape = RoundedCornerShape(8.dp))
+                    Button(onClick = {
+                        if (manualIp.isNotBlank()) {
+                            val name = manualName.ifBlank { manualIp }
+                            settings.manualDevices.add(AppSettings.ManualDevice(name, manualIp))
+                            manualIp = ""
+                            manualName = ""
+                            onSave(settings)
+                        }
+                    }, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6C63FF)),
+                        shape = RoundedCornerShape(8.dp)
+                    ) { Text("添加", color = Color.White) }
+                }
+                settings.manualDevices.forEachIndexed { idx, dev ->
+                    Spacer(Modifier.height(4.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("${dev.name} (${dev.ip})", color = Color(0xFFCDD6F4), modifier = Modifier.weight(1f), fontSize = 13.sp)
+                        TextButton(onClick = {
+                            settings.manualDevices.removeAt(idx)
+                            onSave(settings)
+                        }) { Text("删除", color = Color(0xFFF38BA8), fontSize = 12.sp) }
+                    }
                 }
             }
         }
