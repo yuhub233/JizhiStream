@@ -120,7 +120,11 @@ private fun DeviceCard(device: DeviceInfo, streaming: Boolean, onConnect: (Devic
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    if (device.platform.contains("Android", true)) "A" else "W",
+                    when {
+                        device.platform.contains("Android", true) -> "A"
+                        device.platform == "手动" -> "M"
+                        else -> "W"
+                    },
                     fontWeight = FontWeight.Bold,
                     color = Color(0xFF6C63FF),
                     fontSize = 18.sp

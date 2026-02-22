@@ -60,8 +60,9 @@ fun App() {
     fun startServer() {
         if (serverRunning) return
         controlServer = ControlServer(authManager) { config, socket ->
+            val targetIp = socket.inetAddress.hostAddress ?: return@ControlServer
             statusText = "收到串流请求: ${config.width}x${config.height}"
-            sender = StreamSender(socket.inetAddress.hostAddress).apply { start() }
+            sender = StreamSender(targetIp).apply { start() }
             capture.start(config.width, config.height, config.fps) { frame ->
                 sender?.sendFrame(frame)
             }
@@ -75,7 +76,9 @@ fun App() {
     fun stopServer() {
         capture.stop()
         sender?.stop()
+        sender = null
         controlServer?.stop()
+        controlServer = null
         serverRunning = false
         streaming = false
         statusText = "服务已停止"
@@ -98,6 +101,11 @@ fun App() {
         }
     }
 
+    val allDevices = remember(devices, settings.manualDevices) {
+        val manual = settings.manualDevices.map { DeviceInfo(it.name, it.ip, "手动") }
+        (devices + manual).distinctBy { it.ip }
+    }
+
     MaterialTheme(
         colorScheme = darkColorScheme(
             primary = Color(0xFF6C63FF),
@@ -112,7 +120,7 @@ fun App() {
                 TopBar(currentPage) { currentPage = it }
                 when (currentPage) {
                     "home" -> HomePage(
-                        devices = devices,
+                        devices = allDevices,
                         serverRunning = serverRunning,
                         streaming = streaming,
                         statusText = statusText,
