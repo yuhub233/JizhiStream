@@ -1,0 +1,79 @@
+name: Build JizhiStream
+
+on:
+  push:
+    branches: [ main, master ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+
+      - name: Build Android APK
+        run: ./gradlew :android:assembleRelease
+
+      - name: Upload Android APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: JizhiStream-Android
+          path: android/build/outputs/apk/release/*.apk
+
+  build-desktop:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+
+      - name: Build Desktop Distribution
+        run: ./gradlew :desktop:createDistributable
+
+      - name: Package Desktop
+        run: |
+          cd desktop/build/compose/binaries/main/app
+          Compress-Archive -Path * -DestinationPath JizhiStream-Windows.zip
+        shell: pwsh
+
+      - name: Upload Desktop Build
+        uses: actions/upload-artifact@v4
+        with:
+          name: JizhiStream-Windows
+          path: desktop/build/compose/binaries/main/app/JizhiStream-Windows.zip
+
+  release:
+    needs: [build-android, build-desktop]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            JizhiStream-Android/*.apk
+            JizhiStream-Windows/*.zip
+          generate_release_notes: true
