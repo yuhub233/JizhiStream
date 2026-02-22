@@ -52,17 +52,11 @@ jobs:
       - name: Build Desktop Distribution
         run: gradle :desktop:createDistributable
 
-      - name: Package Desktop
-        run: |
-          cd desktop/build/compose/binaries/main/app
-          Compress-Archive -Path * -DestinationPath JizhiStream-Windows.zip
-        shell: pwsh
-
       - name: Upload Desktop Build
         uses: actions/upload-artifact@v4
         with:
           name: JizhiStream-Windows
-          path: desktop/build/compose/binaries/main/app/JizhiStream-Windows.zip
+          path: desktop/build/compose/binaries/main/app/
 
   release:
     needs: [build-android, build-desktop]
@@ -79,5 +73,5 @@ jobs:
         with:
           files: |
             JizhiStream-Android/*.apk
-            JizhiStream-Windows/*.zip
+            JizhiStream-Windows/**/*
           generate_release_notes: true
