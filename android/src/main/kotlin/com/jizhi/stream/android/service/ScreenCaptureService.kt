@@ -56,8 +56,9 @@ class ScreenCaptureService : Service() {
 
     private fun startCapture() {
         if (running) return
+        val data = resultData ?: return
         val mpm = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-        projection = mpm.getMediaProjection(resultCode, resultData!!)
+        projection = mpm.getMediaProjection(resultCode, data)
 
         imageReader = ImageReader.newInstance(captureWidth, captureHeight, PixelFormat.RGBA_8888, 2)
         virtualDisplay = projection?.createVirtualDisplay(

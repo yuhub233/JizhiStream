@@ -11,14 +11,11 @@ import androidx.compose.runtime.*
 import com.jizhi.stream.android.service.ScreenCaptureService
 import com.jizhi.stream.android.ui.AndroidApp
 import com.jizhi.stream.core.config.AppSettings
-import com.jizhi.stream.core.engine.StreamSender
-import com.jizhi.stream.core.network.*
-import com.jizhi.stream.core.security.AuthManager
 import kotlinx.coroutines.*
 
 class MainActivity : ComponentActivity() {
-    private var pendingStreamTarget: String? = null
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    private var onProjectionGranted: (() -> Unit)? = null
 
     private val projectionLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -27,6 +24,8 @@ class MainActivity : ComponentActivity() {
             ScreenCaptureService.resultCode = result.resultCode
             ScreenCaptureService.resultData = result.data
             startForegroundService(Intent(this, ScreenCaptureService::class.java))
+            onProjectionGranted?.invoke()
+            onProjectionGranted = null
         }
     }
 
@@ -35,11 +34,11 @@ class MainActivity : ComponentActivity() {
         AppSettings.init(filesDir)
         setContent {
             AndroidApp(
-                onStartCapture = { width, height, fps, target ->
+                onRequestProjection = { width, height, fps, callback ->
                     ScreenCaptureService.captureWidth = width
                     ScreenCaptureService.captureHeight = height
                     ScreenCaptureService.captureFps = fps
-                    pendingStreamTarget = target
+                    onProjectionGranted = callback
                     val mpm = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
                     projectionLauncher.launch(mpm.createScreenCaptureIntent())
                 },

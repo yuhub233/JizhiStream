@@ -20,11 +20,13 @@ class DiscoveryService(
     private var socket: DatagramSocket? = null
     private val discovered = mutableMapOf<String, DeviceInfo>()
     var onDeviceFound: ((DeviceInfo) -> Unit)? = null
+    private val localIps = mutableSetOf<String>()
 
     fun getDevices(): List<DeviceInfo> = synchronized(discovered) { discovered.values.toList() }
 
     fun start(scope: CoroutineScope) {
         running = true
+        collectLocalIps()
         scope.launch(Dispatchers.IO) { listenLoop() }
         scope.launch(Dispatchers.IO) { broadcastLoop() }
     }
@@ -33,6 +35,22 @@ class DiscoveryService(
         running = false
         socket?.close()
     }
+
+    private fun collectLocalIps() {
+        try {
+            val interfaces = NetworkInterface.getNetworkInterfaces() ?: return
+            for (ni in interfaces) {
+                if (!ni.isUp || ni.isLoopback) continue
+                for (addr in ni.inetAddresses) {
+                    if (addr is Inet4Address) {
+                        localIps.add(addr.hostAddress)
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+    }
+
+    private fun isLocalIp(ip: String): Boolean = localIps.contains(ip)
 
     private fun buildPayload(): ByteArray {
         val info = "$deviceName|$platform"
@@ -72,6 +90,7 @@ class DiscoveryService(
                 socket?.receive(packet)
                 val msg = ControlMessage.decode(buf.copyOf(packet.length)) ?: continue
                 val ip = packet.address.hostAddress ?: continue
+                if (isLocalIp(ip)) continue
                 if (msg.type == StreamProtocol.MSG_DISCOVER) {
                     val (name, plat) = parsePayload(msg.payload) ?: continue
                     val reply = ControlMessage(StreamProtocol.MSG_DISCOVER_REPLY, buildPayload()).encode()
@@ -88,6 +107,7 @@ class DiscoveryService(
     }
 
     private fun addDevice(device: DeviceInfo) {
+        if (isLocalIp(device.ip)) return
         val isNew = synchronized(discovered) {
             val existing = discovered[device.ip]
             discovered[device.ip] = device
